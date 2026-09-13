@@ -1,12 +1,10 @@
 "use client";
 
 import { useState } from "react";
-//// Checkpoint 8 //////
-// import { UltraHonkBackend } from "@aztec/bb.js";
-// // @ts-ignore
-// import { Noir } from "@noir-lang/noir_js";
-// import { LeanIMT } from "@zk-kit/lean-imt";
-// import { poseidon1, poseidon2 } from "poseidon-lite";
+import { UltraHonkBackend } from "@aztec/bb.js";
+import { Noir } from "@noir-lang/noir_js";
+import { LeanIMT } from "@zk-kit/lean-imt";
+import { poseidon1, poseidon2 } from "poseidon-lite";
 import { useAccount } from "wagmi";
 import { useDeployedContractInfo, useScaffoldReadContract } from "~~/hooks/scaffold-eth";
 import { useChallengeState } from "~~/services/store/challengeStore";
@@ -23,13 +21,31 @@ const generateProof = async (
   _leaves: any[],
   _circuitData: any,
 ) => {
-  //// Checkpoint 8 //////
+  const nullifierHash = poseidon1([BigInt(_nullifier)]);
+  const calculatedTree = new LeanIMT((a: bigint, b: bigint) => poseidon2([a, b]));
+  const leaves = _leaves.map(event => event?.args.value);
+  calculatedTree.insertMany(leaves.reverse() as bigint[]);
+  const calculatedProof = calculatedTree.generateProof(_index);
+  const siblings = calculatedProof.siblings.map(sibling => sibling.toString());
+
+  while (siblings.length < 16) siblings.push("0");
+
+  const input = {
+    nullifier_hash: nullifierHash.toString(),
+    nullifier: BigInt(_nullifier).toString(),
+    secret: BigInt(_secret).toString(),
+    root: _root.toString(),
+    vote: _vote,
+    depth: _depth.toString(),
+    index: _index.toString(),
+    siblings,
+  };
+
   try {
-    void [_root, _vote, _depth, _nullifier, _secret, _index, _leaves, _circuitData];
-    return {
-      proof: new Uint8Array([0]),
-      publicInputs: [0n],
-    };
+    const noir = new Noir(_circuitData);
+    const { witness } = await noir.execute(input);
+    const honk = new UltraHonkBackend(_circuitData.bytecode, { threads: 1 });
+    return await honk.generateProof(witness, { keccak: true });
   } catch (error) {
     console.log(error);
     throw error;

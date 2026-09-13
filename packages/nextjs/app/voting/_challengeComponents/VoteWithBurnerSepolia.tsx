@@ -24,8 +24,7 @@ import { notification } from "~~/utils/scaffold-eth";
 const pimlicoUrl = `https://api.pimlico.io/v2/${sepolia.id}/rpc?apikey=${process.env.NEXT_PUBLIC_PIMLICO_API_KEY}`;
 
 const CHAIN_USED = sepolia;
-//// Checkpoint 10 //////
-// const RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
+const RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
 
 const pimlicoClient = createPimlicoClient({
   chain: CHAIN_USED,
@@ -42,10 +41,24 @@ const createSmartAccount = async (): Promise<{
   walletOwner: `0x${string}`;
 }> => {
   try {
-    //// Checkpoint 10 //////
-    void [createSmartAccountClient, toSafeSmartAccount, createPublicClient, generatePrivateKey, privateKeyToAccount]; // placeholder
-
-    throw new Error("Checkpoint 10: implement createSmartAccount"); // placeholder
+    const privateKey = generatePrivateKey();
+    const wallet = privateKeyToAccount(privateKey);
+    const publicClient = createPublicClient({ chain: CHAIN_USED, transport: http(RPC_URL) });
+    const account = await toSafeSmartAccount({ client: publicClient, owners: [wallet], version: "1.4.1" });
+    const smartAccountClient = createSmartAccountClient({
+      account,
+      chain: CHAIN_USED,
+      bundlerTransport: http(pimlicoUrl),
+      paymaster: pimlicoClient,
+      userOperation: {
+        estimateFeesPerGas: async () => (await pimlicoClient.getUserOperationGasPrice()).fast,
+      },
+    });
+    return {
+      smartAccountClient,
+      smartAccount: account.address as `0x${string}`,
+      walletOwner: wallet.address as `0x${string}`,
+    };
   } catch (error) {
     console.error("Error creating smart account:", error);
     throw error;
@@ -64,10 +77,23 @@ const voteOnSepolia = async ({
   smartAccountClient: any;
 }): Promise<{ userOpHash: `0x${string}` }> => {
   if (!contractInfo && !contractAddress) throw new Error("Contract not found");
-  //// Checkpoint 10 //////
-  void [encodeFunctionData, toHex, proofData, smartAccountClient]; // placeholder
-
-  throw new Error("Checkpoint 10: implement voteOSepolia"); // placeholder
+  const callData = encodeFunctionData({
+    abi: (contractInfo?.abi as any) || ([] as any),
+    functionName: "vote",
+    args: [
+      toHex(proofData.proof),
+      proofData.publicInputs[0],
+      proofData.publicInputs[1],
+      proofData.publicInputs[2],
+      proofData.publicInputs[3],
+    ],
+  });
+  const userOpHash = await smartAccountClient.sendTransaction({
+    to: (contractAddress || contractInfo?.address) as `0x${string}`,
+    data: callData,
+    value: 0n,
+  });
+  return { userOpHash };
 };
 
 export const VoteWithBurnerSepolia = ({ contractAddress }: { contractAddress?: `0x${string}` }) => {
